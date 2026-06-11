@@ -6,6 +6,7 @@ import 'ashgate_config.dart';
 import 'ashgate_payment_provider.dart';
 import 'providers/fedapay_provider.dart';
 import 'providers/feexpay_provider.dart';
+import 'providers/stripe_provider.dart';
 
 export 'ashgate_config.dart';
 export 'ashgate_payment_provider.dart';
@@ -21,6 +22,7 @@ class AshgatePaymentService {
     final name = providerName.toLowerCase();
     if (name == 'fedapay') return FedapayProvider();
     if (name == 'feexpay') return FeexpayProvider();
+    if (name == 'stripe') return StripeProvider();
     throw Exception("Le fournisseur de paiement '$providerName' n'est pas supporté.");
   }
 
@@ -44,7 +46,7 @@ class AshgatePayment {
     );
   }
 
-  /// Widget de paiement unifié (FedaPay ou FeexPay)
+  /// Widget de paiement unifié (FedaPay, FeexPay ou Stripe)
   static Widget payWidget({
     String? transactionToken,
     String? paymentUrl,
@@ -95,7 +97,7 @@ class AshgatePayment {
                 leading: IconButton(
                   icon: const Icon(Icons.close),
                   onPressed: () {
-                    Navigator.pop(sheetContext);
+                    if (sheetContext.mounted) Navigator.pop(sheetContext);
                     onPaymentFailed();
                   },
                 ),
@@ -106,11 +108,11 @@ class AshgatePayment {
                 child: AshgateWebView(
                   url: paymentUrl,
                   onPaymentSuccess: () {
-                    Navigator.pop(sheetContext);
+                    if (sheetContext.mounted) Navigator.pop(sheetContext);
                     onPaymentSuccess();
                   },
                   onPaymentFailed: () {
-                    Navigator.pop(sheetContext);
+                    if (sheetContext.mounted) Navigator.pop(sheetContext);
                     onPaymentFailed();
                   },
                 ),
@@ -171,7 +173,7 @@ class AshgatePayment {
           ),
         ),
       );
-    } else if (name == 'feexpay') {
+    } else if (name == 'feexpay' || name == 'stripe') {
       if (result.paymentUrl != null) {
         await showPaymentSheet(
           context: context,
@@ -206,6 +208,7 @@ class AshgateWebView extends StatefulWidget {
 class _AshgateWebViewState extends State<AshgateWebView> {
   late final WebViewController _controller;
   bool _isLoading = true;
+  bool _callbackCalled = false;
 
   @override
   void initState() {
@@ -221,21 +224,39 @@ class _AshgateWebViewState extends State<AshgateWebView> {
             if (mounted) setState(() => _isLoading = false);
           },
           onUrlChange: (change) {
+            if (_callbackCalled) return;
             if (change.url != null) {
-              final uri = Uri.tryParse(change.url!);
-              if (uri != null) {
-                final urlString = change.url!.toLowerCase();
-                if (urlString.contains('/status/success') ||
-                    uri.queryParameters['status'] == 'success' ||
-                    uri.queryParameters['transaction'] == 'success' ||
-                    urlString.contains('success')) {
-                  widget.onPaymentSuccess();
-                } else if (urlString.contains('/status/failure') ||
-                           uri.queryParameters['status'] == 'failed' ||
-                           urlString.contains('fail') ||
-                           urlString.contains('cancel')) {
-                  widget.onPaymentFailed();
+              try {
+                final uri = Uri.tryParse(change.url!);
+                if (uri != null) {
+                  final pathString = uri.path.toLowerCase();
+                  bool isSuccess = pathString.contains('success');
+                  bool isFailure = pathString.contains('failure') ||
+                      pathString.contains('fail') ||
+                      pathString.contains('cancel') ||
+                      pathString.contains('error');
+
+                  if (uri.hasQuery) {
+                    final status = uri.queryParameters['status'];
+                    final transaction = uri.queryParameters['transaction'];
+                    if (status == 'success' || transaction == 'success') {
+                      isSuccess = true;
+                    }
+                    if (status == 'failed') {
+                      isFailure = true;
+                    }
+                  }
+
+                  if (isSuccess) {
+                    _callbackCalled = true;
+                    widget.onPaymentSuccess();
+                  } else if (isFailure) {
+                    _callbackCalled = true;
+                    widget.onPaymentFailed();
+                  }
                 }
+              } catch (e) {
+                // Avoid crashing on malformed query parameters
               }
             }
           },

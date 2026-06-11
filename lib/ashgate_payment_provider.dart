@@ -12,6 +12,7 @@ class AshgatePaymentRequest {
   final String firstname;
   final String lastname;
   final String paymentMethod; // ex: "mtn", "moov", "celtiis"
+  final String currency; // ex: "XOF", "EUR"
   final BuildContext? context; // Requis pour certains SDK (ex: ChoicePage de FeexPay)
 
   AshgatePaymentRequest({
@@ -23,6 +24,7 @@ class AshgatePaymentRequest {
     required this.firstname,
     required this.lastname,
     required this.paymentMethod,
+    this.currency = 'XOF',
     this.context,
   });
 }

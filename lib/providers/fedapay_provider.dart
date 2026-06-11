@@ -17,7 +17,7 @@ class FedapayProvider implements AshgatePaymentProvider {
       final transactionCreate = TransactionCreate(
         amount: request.amount.toInt(),
         description: request.description,
-        currency: CurrencyIso(iso: 'XOF'),
+        currency: CurrencyIso(iso: request.currency),
         customer: customer,
       );
 
